@@ -159,14 +159,12 @@ class MinFotbollConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> MinFotbollOptionsFlow:
-        return MinFotbollOptionsFlow(config_entry)
+        """Create the options flow."""
+        return MinFotbollOptionsFlow()
 
 
-class MinFotbollOptionsFlow(config_entries.OptionsFlow):
-    """Allow changing selected teams later."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+class MinFotbollOptionsFlow(config_entries.OptionsFlowWithReload):
+    """Allow changing selected teams later and reload after saving."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         token = {
