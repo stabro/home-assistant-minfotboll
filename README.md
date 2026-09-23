@@ -2,14 +2,15 @@
 
 Experimental Home Assistant custom integration for the Swedish **Min Fotboll** service.
 
-> **Status: v0.1.2 developer preview**
+> **Status: v0.1.4 developer preview**
 >
 > The API used by Min Fotboll is undocumented and may change. This integration is not affiliated with Svenska Fotbollförbundet, Min Fotboll or Sportswik.
 
-## What v0.1.2 does
+## What v0.1.4 does
 
 - Reads current-season teams from Min Fotboll's `initmyteams` endpoint.
 - Lets the user choose which teams should create Home Assistant entities.
+- Deselected teams are removed from the Home Assistant entity and device registries on reload.
 - Creates a **Match** sensor per selected team.
 - Creates a **Next match** timestamp sensor per selected team, with opponent, home/away, arena and game ID as attributes.
 - Uses the verified `initmain` payload plus the live-timeline endpoint.
@@ -17,6 +18,7 @@ Experimental Home Assistant custom integration for the Swedish **Min Fotboll** s
 - Shows the current/live score when a game is live.
 - Otherwise shows the most recent finished game's score when available.
 - Exposes match status and the latest timeline event as entity attributes.
+- Requests Swedish localization from Min Fotboll and translates common system events to Swedish as a fallback while retaining raw event text attributes.
 - Automatically refreshes the Min Fotboll JWT pair when the access token expires.
 - Avoids the unverified `teamapi/getlivegames` call that caused HTTP 400 in v0.1.0.
 
@@ -48,7 +50,7 @@ minute: "75'"
 
 Copy `custom_components/min_fotboll` to your Home Assistant `config/custom_components/` directory and restart Home Assistant.
 
-## Authentication in v0.1.2
+## Authentication in v0.1.4
 
 The Min Fotboll web login requests an SMS code through a Google reCAPTCHA-protected web form. A Home Assistant server cannot complete that browser reCAPTCHA flow directly, so the developer preview imports the JWT pair from an existing browser login.
 
@@ -79,7 +81,7 @@ The sensor state is the score (for example `1-3`). Attributes include:
 ## Known limitations
 
 - Min Fotboll has no documented public API for this use case.
-- v0.1.2 requires importing `JWT_token` from a browser login.
+- v0.1.4 requires importing `JWT_token` from a browser login.
 - The exact response shape can vary; this version still needs real-world testing across more accounts and competitions.
 - Team selection can be changed later from **Settings → Devices & services → Min Fotboll → Configure**. Saving the selection reloads the integration automatically.
 
