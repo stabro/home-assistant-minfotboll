@@ -66,3 +66,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unloaded
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate older Min Fotboll config entries."""
+    if entry.version == 1:
+        # v0.1.2 introduced team selection. Leave selected_teams unset on
+        # migrated entries so the coordinator initially discovers all current
+        # season teams; the user can then choose teams from Options/Configure.
+        hass.config_entries.async_update_entry(entry, version=2)
+        return True
+
+    return entry.version == 2
