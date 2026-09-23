@@ -1,0 +1,12 @@
+{
+  "domain": "min_fotboll",
+  "name": "Min Fotboll",
+  "codeowners": ["@stabro"],
+  "config_flow": true,
+  "documentation": "https://github.com/stabro/home-assistant-minfotboll",
+  "iot_class": "cloud_polling",
+  "integration_type": "service",
+  "issue_tracker": "https://github.com/stabro/home-assistant-minfotboll/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
