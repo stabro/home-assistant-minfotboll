@@ -4,12 +4,19 @@
     "step": {
       "user": {
         "title": "Connect Min Fotboll",
-        "description": "The first test version uses the JWT_token from an already signed-in Min Fotboll browser session. Open browser developer tools, go to Application/Storage → Cookies for minfotboll.svenskfotboll.se and copy the JWT_token value. Direct phone number and SMS authentication is planned for a later version.",
+        "description": "The developer preview uses JWT_token from an already signed-in Min Fotboll browser session. Open browser developer tools, go to Application/Storage → Cookies for minfotboll.svenskfotboll.se and copy the JWT_token value.",
         "data": {
           "token_json": "JWT_token (JSON)"
         },
         "data_description": {
           "token_json": "The complete JSON value containing AccessToken, RefreshToken, Expires and ServerTime."
+        }
+      },
+      "teams": {
+        "title": "Select teams",
+        "description": "Choose which current-season teams should create sensors in Home Assistant.",
+        "data": {
+          "selected_teams": "Teams"
         }
       }
     },
@@ -19,7 +26,21 @@
       "unknown": "An unexpected error occurred."
     },
     "abort": {
-      "already_configured": "This Min Fotboll account is already configured."
+      "already_configured": "This Min Fotboll account is already configured.",
+      "no_teams": "No current-season teams were found for the account.",
+      "cannot_connect": "Could not connect to Min Fotboll.",
+      "invalid_auth": "Authentication needs to be renewed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Select teams",
+        "description": "Choose which teams should have sensors in Home Assistant. The integration reloads automatically after saving.",
+        "data": {
+          "selected_teams": "Teams"
+        }
+      }
     }
   }
 }
