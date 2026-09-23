@@ -94,6 +94,7 @@ class MinFotbollApi:
                     "Accept": "application/json, text/plain, */*",
                     "Content-Type": "application/json",
                     "X-Platform": PLATFORM_ID,
+                    "Accept-Language": "sv-SE",
                 },
                 timeout=30,
             ) as response:
@@ -133,6 +134,7 @@ class MinFotbollApi:
             "X-Platform": PLATFORM_ID,
             "Origin": "https://minfotboll.svenskfotboll.se",
             "Referer": "https://minfotboll.svenskfotboll.se/",
+            "Accept-Language": "sv-SE",
         }
 
         try:
