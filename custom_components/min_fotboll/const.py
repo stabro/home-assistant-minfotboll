@@ -4,7 +4,7 @@ from datetime import timedelta
 
 DOMAIN = "min_fotboll"
 NAME = "Min Fotboll"
-VERSION = "0.1.0"
+VERSION = "0.1.2"
 
 API_BASE_URL = "https://minfotboll-api.azurewebsites.net"
 PLATFORM_ID = "2"
@@ -15,6 +15,7 @@ CONF_REFRESH_TOKEN = "refresh_token"
 CONF_EXPIRES = "expires"
 CONF_SERVER_TIME = "server_time"
 CONF_TOKEN_JSON = "token_json"
+CONF_SELECTED_TEAMS = "selected_teams"
 
 STATUS_UPCOMING = "KOMMANDE"
 STATUS_LIVE = "LIVE"
