@@ -4,7 +4,7 @@ from datetime import timedelta
 
 DOMAIN = "min_fotboll"
 NAME = "Min Fotboll"
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 
 API_BASE_URL = "https://minfotboll-api.azurewebsites.net"
 PLATFORM_ID = "2"
