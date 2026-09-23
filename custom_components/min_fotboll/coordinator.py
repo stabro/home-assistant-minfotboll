@@ -307,6 +307,9 @@ def _build_next_match(
             "game_id": None,
             "game_time": None,
             "status": STATUS_UNKNOWN,
+            "relative": None,
+            "days_until": None,
+            "is_today": False,
         }
 
     home_team_id = game.get("HomeTeamID")
@@ -317,6 +320,20 @@ def _build_next_match(
         if is_home
         else game.get("HomeTeamDisplayName")
     )
+
+    game_dt = _parse_game_time(game)
+    local_dt = game_dt.astimezone()
+    today = datetime.now().astimezone().date()
+    days_until = (local_dt.date() - today).days
+
+    if days_until == 0:
+        relative = f"Idag kl {local_dt:%H:%M}"
+    elif days_until == 1:
+        relative = f"Imorgon kl {local_dt:%H:%M}"
+    elif days_until > 1:
+        relative = f"Om {days_until} dagar kl {local_dt:%H:%M}"
+    else:
+        relative = f"{local_dt:%Y-%m-%d kl %H:%M}"
 
     return {
         "game_id": game.get("GameID"),
@@ -329,6 +346,9 @@ def _build_next_match(
         "home_away": "hemma" if is_home else "borta",
         "arena": game.get("ArenaName"),
         "status": STATUS_LIVE if _is_live(game) else STATUS_UPCOMING,
+        "days_until": days_until,
+        "is_today": days_until == 0,
+        "relative": relative,
     }
 
 
