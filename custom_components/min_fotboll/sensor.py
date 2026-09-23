@@ -67,7 +67,7 @@ class MinFotbollMatchSensor(MinFotbollBaseSensor):
 
     def __init__(self, coordinator: MinFotbollCoordinator, team_id: int) -> None:
         super().__init__(coordinator, team_id)
-        self._attr_unique_id = f"min_fotboll_team_{team_id}_match"
+        self._attr_unique_id = f"min_fotboll_team_{team_id}"
 
     @property
     def native_value(self) -> str | None:
