@@ -18,6 +18,7 @@ from .const import (
     STATUS_LIVE,
     STATUS_POSTPONED,
     STATUS_UNKNOWN,
+    STATUS_UPCOMING,
     UPDATE_INTERVAL,
 )
 
@@ -25,9 +26,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
-    """Coordinate updates for all followed teams in one account."""
+    """Coordinate selected Min Fotboll teams."""
 
-    def __init__(self, hass: HomeAssistant, api: MinFotbollApi) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: MinFotbollApi,
+        selected_team_ids: list[int] | None,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -35,42 +41,59 @@ class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
             update_interval=UPDATE_INTERVAL,
         )
         self.api = api
+        self.selected_team_ids = (
+            {int(team_id) for team_id in selected_team_ids}
+            if selected_team_ids
+            else None
+        )
 
     async def _async_update_data(self) -> dict[int, dict[str, Any]]:
-        """Update all followed teams from the verified main-view payload."""
         try:
-            main = await self.api.async_get_main()
-            teams = [
-                team
-                for team in main.get("Teams", [])
-                if isinstance(team, dict) and team.get("MemberFollowsTeam", True)
-            ]
-            games = _main_games(main)
+            my_teams = await self.api.async_get_my_teams()
+            teams = _current_season_teams(my_teams)
+
+            if self.selected_team_ids is not None:
+                teams = [
+                    team
+                    for team in teams
+                    if int(team["TeamID"]) in self.selected_team_ids
+                ]
 
             result: dict[int, dict[str, Any]] = {}
             for team in teams:
                 team_id = int(team["TeamID"])
-                team_games = [
-                    game for game in games if _game_belongs_to_team(game, team_id)
-                ]
-                game = _pick_game(team_games)
+
+                coming_payload = await self.api.async_get_coming_team_games(team_id, 5)
+                previous_payload = await self.api.async_get_previous_team_games(team_id)
+                coming_games = _extract_games(coming_payload)
+                previous_games = _extract_games(previous_payload)
+
+                current_game = _pick_current_game(coming_games, previous_games)
+                next_game = _pick_next_game(coming_games)
 
                 timeline: dict[str, Any] = {}
-                if game and game.get("GameID") and _should_load_timeline(game):
+                if current_game and current_game.get("GameID") and _should_load_timeline(current_game):
                     try:
-                        timeline = await self.api.async_get_timeline(int(game["GameID"]))
+                        timeline = await self.api.async_get_timeline(
+                            int(current_game["GameID"])
+                        )
                     except MinFotbollConnectionError as err:
-                        # A missing timeline must not make the whole integration unavailable.
                         _LOGGER.debug(
                             "Timeline unavailable for game %s: %s",
-                            game.get("GameID"),
+                            current_game.get("GameID"),
                             err,
                         )
                     else:
-                        if isinstance(timeline.get("GameHeaderInfo"), dict):
-                            game = timeline["GameHeaderInfo"]
+                        header = timeline.get("GameHeaderInfo")
+                        if isinstance(header, dict):
+                            current_game = header
 
-                result[team_id] = _build_team_state(team, game, timeline)
+                result[team_id] = _build_team_state(
+                    team,
+                    current_game,
+                    next_game,
+                    timeline,
+                )
 
             return result
         except MinFotbollAuthError as err:
@@ -81,70 +104,122 @@ class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
             raise UpdateFailed(f"Unexpected Min Fotboll response: {err}") from err
 
 
-def _main_games(main: dict[str, Any]) -> list[dict[str, Any]]:
-    """Collect game headers already returned by initmain.
+def _current_season_teams(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Merge current-season Roles and TeamsIFollow, deduplicated by TeamID."""
+    current_year = str(datetime.now(timezone.utc).year)
+    merged: dict[int, dict[str, Any]] = {}
 
-    Min Fotboll's verified web response includes ComingGames and may include
-    recent completed games in TeamsIFollowBlurbs. Using those avoids depending
-    on undocumented teamapi endpoints.
-    """
-    games: dict[int, dict[str, Any]] = {}
+    for group_name in ("Roles", "TeamsIFollow"):
+        for season in payload.get(group_name, []):
+            if not isinstance(season, dict) or str(season.get("Name")) != current_year:
+                continue
+            for team in season.get("Items", []):
+                if not isinstance(team, dict) or not team.get("TeamID"):
+                    continue
+                if team.get("MemberFollowsTeam") is False:
+                    continue
+                merged[int(team["TeamID"])] = team
 
-    for item in main.get("ComingGames", []):
-        if isinstance(item, dict) and item.get("GameID"):
-            games[int(item["GameID"])] = item
-
-    for blurb in main.get("TeamsIFollowBlurbs", []):
-        if not isinstance(blurb, dict) or blurb.get("Deleted") or blurb.get("IsAd"):
-            continue
-        header = blurb.get("GameHeaderInfo")
-        if isinstance(header, dict) and header.get("GameID"):
-            games[int(header["GameID"])] = header
-
-    return list(games.values())
+    return list(merged.values())
 
 
-def _game_belongs_to_team(game: dict[str, Any], team_id: int) -> bool:
-    """Return True when a game explicitly references the followed team ID."""
-    return team_id in (game.get("HomeTeamID"), game.get("AwayTeamID"))
+def _extract_games(payload: Any) -> list[dict[str, Any]]:
+    """Extract game dictionaries from common Min Fotboll response shapes."""
+    if isinstance(payload, list):
+        return [
+            item for item in payload
+            if isinstance(item, dict) and item.get("GameID")
+        ]
+    if not isinstance(payload, dict):
+        return []
+
+    if payload.get("GameID"):
+        return [payload]
+
+    for key in (
+        "Games",
+        "ComingGames",
+        "PreviousGames",
+        "Items",
+        "Result",
+        "GameHeaderInfos",
+    ):
+        value = payload.get(key)
+        if isinstance(value, list):
+            games = [
+                item for item in value
+                if isinstance(item, dict) and item.get("GameID")
+            ]
+            if games:
+                return games
+
+    for value in payload.values():
+        if isinstance(value, list):
+            games = [
+                item for item in value
+                if isinstance(item, dict) and item.get("GameID")
+            ]
+            if games:
+                return games
+    return []
 
 
 def _parse_game_time(game: dict[str, Any]) -> datetime:
     value = game.get("GameTime")
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
         except ValueError:
             pass
     return datetime.min.replace(tzinfo=timezone.utc)
 
 
-def _pick_game(games: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Choose live first, then latest finished, then nearest upcoming."""
-    if not games:
-        return None
+def _is_live(game: dict[str, Any]) -> bool:
+    return bool(game.get("GameStatusID") == 2 or game.get("ClockIsRunning"))
 
-    live = [
-        game
-        for game in games
-        if game.get("GameStatusID") == 2 or game.get("ClockIsRunning")
-    ]
+
+def _is_finished(game: dict[str, Any]) -> bool:
+    return bool(game.get("GameStatusID") == 3)
+
+
+def _pick_current_game(
+    coming_games: list[dict[str, Any]],
+    previous_games: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Pick live game first, otherwise latest completed match."""
+    all_games = coming_games + previous_games
+    live = [game for game in all_games if _is_live(game)]
     if live:
         return max(live, key=_parse_game_time)
 
-    finished = [game for game in games if game.get("GameStatusID") == 3]
+    finished = [game for game in previous_games if _is_finished(game)]
     if finished:
         return max(finished, key=_parse_game_time)
 
-    upcoming = [game for game in games if game.get("GameStatusID") == 1]
-    if upcoming:
-        return min(upcoming, key=_parse_game_time)
+    if previous_games:
+        return max(previous_games, key=_parse_game_time)
 
-    return max(games, key=_parse_game_time)
+    return None
+
+
+def _pick_next_game(games: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Pick the nearest future/non-finished game."""
+    now = datetime.now(timezone.utc)
+    upcoming = [
+        game
+        for game in games
+        if not _is_finished(game)
+        and (_parse_game_time(game) >= now or _is_live(game))
+    ]
+    if not upcoming:
+        return None
+    return min(upcoming, key=_parse_game_time)
 
 
 def _should_load_timeline(game: dict[str, Any]) -> bool:
-    """Only query the timeline when a game is live or completed."""
     return bool(
         game.get("GameStatusID") in (2, 3)
         or game.get("ClockIsRunning")
@@ -154,12 +229,17 @@ def _should_load_timeline(game: dict[str, Any]) -> bool:
 
 def _build_team_state(
     team: dict[str, Any],
-    game: dict[str, Any] | None,
+    current_game: dict[str, Any] | None,
+    next_game: dict[str, Any] | None,
     timeline: dict[str, Any],
 ) -> dict[str, Any]:
-    """Create the compact representation consumed by sensor entities."""
     club_name = team.get("ClubName") or ""
-    team_name = team.get("DisplayName") or team.get("TeamName") or team.get("Name") or ""
+    team_name = (
+        team.get("DisplayName")
+        or team.get("TeamName")
+        or team.get("Name")
+        or ""
+    )
     friendly_name = f"{club_name} {team_name}".strip()
 
     data: dict[str, Any] = {
@@ -168,50 +248,88 @@ def _build_team_state(
         "club_name": club_name,
         "friendly_name": friendly_name,
         "logo_url": team.get("ClubLogoURL"),
-        "game_id": None,
-        "score": None,
-        "status": STATUS_UNKNOWN,
-        "latest_event": None,
-        "minute": None,
+        "match": _build_match(current_game, timeline),
+        "next_match": _build_next_match(next_game, int(team["TeamID"])),
     }
-    if not game:
-        return data
-
-    status = _game_status(game, _latest_event(timeline))
-    home_score = str(game.get("HomeTeamScore", ""))
-    away_score = str(game.get("AwayTeamScore", ""))
-
-    # Avoid presenting an unplayed 0-0 fixture as a result.
-    score = None
-    if status in (STATUS_LIVE, STATUS_FINISHED):
-        if home_score != "" and away_score != "":
-            score = f"{home_score}-{away_score}"
-
-    latest = _latest_event(timeline)
-    data.update(
-        {
-            "game_id": game.get("GameID"),
-            "home_team": game.get("HomeTeamDisplayName"),
-            "away_team": game.get("AwayTeamDisplayName"),
-            "home_team_id": game.get("HomeTeamID"),
-            "away_team_id": game.get("AwayTeamID"),
-            "game_time": game.get("GameTime"),
-            "arena": game.get("ArenaName"),
-            "score": score,
-            "home_score": home_score,
-            "away_score": away_score,
-            "status": status,
-            "latest_event": latest.get("Text") if latest else None,
-            "minute": latest.get("GameMinute") if latest else None,
-            "latest_event_short": latest.get("ShortText") if latest else None,
-            "latest_event_details": latest.get("DetailsText") if latest else None,
-        }
-    )
     return data
 
 
+def _build_match(
+    game: dict[str, Any] | None,
+    timeline: dict[str, Any],
+) -> dict[str, Any]:
+    if not game:
+        return {
+            "game_id": None,
+            "score": None,
+            "status": STATUS_UNKNOWN,
+            "latest_event": None,
+            "minute": None,
+        }
+
+    latest = _latest_event(timeline)
+    status = _game_status(game, latest)
+    home_score = game.get("HomeTeamScore")
+    away_score = game.get("AwayTeamScore")
+    score = None
+    if status in (STATUS_LIVE, STATUS_FINISHED):
+        if home_score is not None and away_score is not None:
+            score = f"{home_score}-{away_score}"
+
+    return {
+        "game_id": game.get("GameID"),
+        "home_team": game.get("HomeTeamDisplayName"),
+        "away_team": game.get("AwayTeamDisplayName"),
+        "home_team_id": game.get("HomeTeamID"),
+        "away_team_id": game.get("AwayTeamID"),
+        "game_time": game.get("GameTime"),
+        "arena": game.get("ArenaName"),
+        "score": score,
+        "home_score": home_score,
+        "away_score": away_score,
+        "status": status,
+        "latest_event": latest.get("Text") if latest else None,
+        "minute": latest.get("GameMinute") if latest else None,
+        "latest_event_short": latest.get("ShortText") if latest else None,
+        "latest_event_details": latest.get("DetailsText") if latest else None,
+    }
+
+
+def _build_next_match(
+    game: dict[str, Any] | None,
+    team_id: int,
+) -> dict[str, Any]:
+    if not game:
+        return {
+            "game_id": None,
+            "game_time": None,
+            "status": STATUS_UNKNOWN,
+        }
+
+    home_team_id = game.get("HomeTeamID")
+    away_team_id = game.get("AwayTeamID")
+    is_home = home_team_id == team_id
+    opponent = (
+        game.get("AwayTeamDisplayName")
+        if is_home
+        else game.get("HomeTeamDisplayName")
+    )
+
+    return {
+        "game_id": game.get("GameID"),
+        "game_time": game.get("GameTime"),
+        "home_team": game.get("HomeTeamDisplayName"),
+        "away_team": game.get("AwayTeamDisplayName"),
+        "home_team_id": home_team_id,
+        "away_team_id": away_team_id,
+        "opponent": opponent,
+        "home_away": "hemma" if is_home else "borta",
+        "arena": game.get("ArenaName"),
+        "status": STATUS_LIVE if _is_live(game) else STATUS_UPCOMING,
+    }
+
+
 def _latest_event(timeline: dict[str, Any]) -> dict[str, Any] | None:
-    """Return the newest real event, ignoring ads and deleted timeline rows."""
     for item in timeline.get("TimelineBlurbs", []) if isinstance(timeline, dict) else []:
         if not isinstance(item, dict) or item.get("Deleted") or item.get("IsAd"):
             continue
@@ -222,7 +340,6 @@ def _latest_event(timeline: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _game_status(game: dict[str, Any], latest: dict[str, Any] | None) -> str:
-    """Translate the game state to a compact Swedish status."""
     if game.get("Cancelled"):
         return STATUS_CANCELLED
     if game.get("Postponed"):
@@ -231,9 +348,8 @@ def _game_status(game: dict[str, Any], latest: dict[str, Any] | None) -> str:
         return STATUS_INTERRUPTED
     if latest and latest.get("IsGameEnd"):
         return STATUS_FINISHED
-    status_id = game.get("GameStatusID")
-    if status_id == 3:
+    if _is_finished(game):
         return STATUS_FINISHED
-    if status_id == 2 or game.get("ClockIsRunning"):
+    if _is_live(game):
         return STATUS_LIVE
     return STATUS_UNKNOWN
