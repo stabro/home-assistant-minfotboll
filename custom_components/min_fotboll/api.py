@@ -5,15 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 import base64
 import json
-import logging
-import re
 from typing import Any
 
 from aiohttp import ClientError, ClientResponseError, ClientSession
 
 from .const import API_BASE_URL, PLATFORM_ID
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class MinFotbollError(Exception):
@@ -46,35 +42,38 @@ class MinFotbollApi:
 
     @property
     def token(self) -> dict[str, Any]:
-        """Return a copy of the current token data."""
         return dict(self._token)
 
     async def async_validate(self) -> dict[str, Any]:
-        """Validate credentials by loading the account header."""
         return await self._request("GET", "/api/mainviewapi/initmainheader")
 
-    async def async_get_main(self) -> dict[str, Any]:
-        """Load the main view with followed teams and upcoming games."""
-        return await self._request(
-            "GET", "/api/mainviewapi/initmain", params={"IsFromWeb": "true"}
-        )
+    async def async_get_my_teams(self) -> dict[str, Any]:
+        """Return roles and all teams followed by the signed-in account."""
+        return await self._request("GET", "/api/memberapi/initmyteams")
 
-    async def async_get_live_team_games(self, team_id: int) -> Any:
-        """Load live games for a followed team."""
+    async def async_get_coming_team_games(
+        self, team_id: int, number_of_games: int = 5
+    ) -> Any:
+        """Return upcoming games using the endpoint used by the web client."""
         return await self._request(
-            "GET", "/api/teamapi/getlivegames/", params={"teamid": team_id}
+            "GET",
+            "/api/teamapi/getcomingteamgames",
+            params={
+                "TeamID": team_id,
+                "LastGameID": 0,
+                "NrOfGames": number_of_games,
+            },
         )
 
     async def async_get_previous_team_games(self, team_id: int) -> Any:
-        """Load previous games for a followed team."""
+        """Return recent games using the endpoint used by the web client."""
         return await self._request(
             "GET",
-            "/api/teamapi/getpreviousteamgames/",
-            params={"teamid": team_id, "lastgameid": 0},
+            "/api/teamapi/getpreviousteamgames",
+            params={"TeamID": team_id, "LastGameID": 0},
         )
 
     async def async_get_timeline(self, game_id: int) -> dict[str, Any]:
-        """Load current score and timeline for a game."""
         return await self._request(
             "GET",
             "/api/followgameapi/initlivetimelineblurbs",
@@ -82,7 +81,6 @@ class MinFotbollApi:
         )
 
     async def async_refresh_token(self) -> dict[str, Any]:
-        """Refresh the JWT pair."""
         access_token = self._clean_access_token(self._token.get("AccessToken"))
         refresh_token = self._token.get("RefreshToken")
         if not access_token or not refresh_token:
@@ -125,7 +123,6 @@ class MinFotbollApi:
         params: dict[str, Any] | None = None,
         retry_auth: bool = True,
     ) -> Any:
-        """Perform one authenticated API request."""
         access_token = self._clean_access_token(self._token.get("AccessToken"))
         if not access_token:
             raise MinFotbollAuthError("Missing access token")
@@ -172,14 +169,12 @@ class MinFotbollApi:
 
     @staticmethod
     def _clean_access_token(value: Any) -> str:
-        """Normalize the access token returned by the site."""
         if not isinstance(value, str):
             return ""
         return value.strip().strip('"')
 
 
 def parse_token_json(raw: str) -> dict[str, Any]:
-    """Parse the JWT_token cookie JSON used by Min Fotboll."""
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as err:
@@ -187,7 +182,6 @@ def parse_token_json(raw: str) -> dict[str, Any]:
 
     if not isinstance(value, dict):
         raise MinFotbollAuthError("Token JSON must be an object")
-
     if not value.get("AccessToken") or not value.get("RefreshToken"):
         raise MinFotbollAuthError("AccessToken and RefreshToken are required")
 
@@ -196,7 +190,6 @@ def parse_token_json(raw: str) -> dict[str, Any]:
 
 
 def jwt_member_id(access_token: str) -> str | None:
-    """Read memberid from the JWT payload without verifying the signature."""
     try:
         payload = access_token.split(".")[1]
         payload += "=" * (-len(payload) % 4)
@@ -206,11 +199,3 @@ def jwt_member_id(access_token: str) -> str | None:
         return str(member_id) if member_id is not None else None
     except (IndexError, ValueError, json.JSONDecodeError):
         return None
-
-
-def parse_dotnet_date(value: str | None) -> int | None:
-    """Return milliseconds from a .NET /Date(...)/ value."""
-    if not value:
-        return None
-    match = re.match(r"^/Date\((\d+)\)/$", value)
-    return int(match.group(1)) if match else None
