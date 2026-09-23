@@ -8,5 +8,5 @@
   "integration_type": "service",
   "issue_tracker": "https://github.com/stabro/home-assistant-minfotboll/issues",
   "requirements": [],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }
