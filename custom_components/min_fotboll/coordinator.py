@@ -43,7 +43,7 @@ class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
         self.api = api
         self.selected_team_ids = (
             {int(team_id) for team_id in selected_team_ids}
-            if selected_team_ids
+            if selected_team_ids is not None
             else None
         )
 
@@ -220,11 +220,8 @@ def _pick_next_game(games: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 def _should_load_timeline(game: dict[str, Any]) -> bool:
-    return bool(
-        game.get("GameStatusID") in (2, 3)
-        or game.get("ClockIsRunning")
-        or game.get("LatestEventTime")
-    )
+    """A current/latest match should always be enriched from its timeline."""
+    return bool(game.get("GameID"))
 
 
 def _build_team_state(
