@@ -266,6 +266,9 @@ def _build_match(
 
     latest = _latest_event(timeline)
     status = _game_status(game, latest)
+    latest_text_raw = latest.get("Text") if latest else None
+    latest_short_raw = latest.get("ShortText") if latest else None
+    latest_details_raw = latest.get("DetailsText") if latest else None
     home_score = game.get("HomeTeamScore")
     away_score = game.get("AwayTeamScore")
     score = None
@@ -285,10 +288,13 @@ def _build_match(
         "home_score": home_score,
         "away_score": away_score,
         "status": status,
-        "latest_event": latest.get("Text") if latest else None,
+        "latest_event": _translate_event_text(latest_text_raw),
+        "latest_event_raw": latest_text_raw,
         "minute": latest.get("GameMinute") if latest else None,
-        "latest_event_short": latest.get("ShortText") if latest else None,
-        "latest_event_details": latest.get("DetailsText") if latest else None,
+        "latest_event_short": _translate_event_text(latest_short_raw),
+        "latest_event_short_raw": latest_short_raw,
+        "latest_event_details": _translate_event_text(latest_details_raw),
+        "latest_event_details_raw": latest_details_raw,
     }
 
 
@@ -350,3 +356,30 @@ def _game_status(game: dict[str, Any], latest: dict[str, Any] | None) -> str:
     if _is_live(game):
         return STATUS_LIVE
     return STATUS_UNKNOWN
+
+
+_EVENT_TRANSLATIONS = {
+    "Final whistle": "Matchen slut",
+    "Kick off": "Avspark",
+    "Kick-off": "Avspark",
+    "Half time": "Halvtid",
+    "Half-time": "Halvtid",
+    "Goal": "Mål",
+    "Own goal": "Självmål",
+    "Yellow card": "Gult kort",
+    "Red card": "Rött kort",
+    "Substitution": "Byte",
+    "Penalty": "Straff",
+    "Penalty missed": "Missad straff",
+}
+
+
+def _translate_event_text(value: Any) -> Any:
+    """Translate known Min Fotboll system event phrases to Swedish."""
+    if not isinstance(value, str):
+        return value
+
+    translated = value
+    for english, swedish in _EVENT_TRANSLATIONS.items():
+        translated = translated.replace(english, swedish)
+    return translated
