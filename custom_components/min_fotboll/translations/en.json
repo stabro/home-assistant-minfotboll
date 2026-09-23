@@ -1,0 +1,25 @@
+{
+  "title": "Min Fotboll",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Min Fotboll",
+        "description": "The first test version uses the JWT_token from an already signed-in Min Fotboll browser session. Open browser developer tools, go to Application/Storage → Cookies for minfotboll.svenskfotboll.se and copy the JWT_token value. Direct phone number and SMS authentication is planned for a later version.",
+        "data": {
+          "token_json": "JWT_token (JSON)"
+        },
+        "data_description": {
+          "token_json": "The complete JSON value containing AccessToken, RefreshToken, Expires and ServerTime."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Min Fotboll.",
+      "invalid_auth": "The token could not be used. Sign in to Min Fotboll again and copy a new JWT_token.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This Min Fotboll account is already configured."
+    }
+  }
+}
