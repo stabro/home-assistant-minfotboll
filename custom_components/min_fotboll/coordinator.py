@@ -8,6 +8,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import MinFotbollApi, MinFotbollAuthError, MinFotbollConnectionError
 from .const import (
@@ -322,8 +323,8 @@ def _build_next_match(
     )
 
     game_dt = _parse_game_time(game)
-    local_dt = game_dt.astimezone()
-    today = datetime.now().astimezone().date()
+    local_dt = dt_util.as_local(game_dt)
+    today = dt_util.now().date()
     days_until = (local_dt.date() - today).days
 
     if days_until == 0:
