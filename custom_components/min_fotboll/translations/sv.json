@@ -4,12 +4,19 @@
     "step": {
       "user": {
         "title": "Anslut Min Fotboll",
-        "description": "Första testversionen använder JWT_token från en redan inloggad Min Fotboll-webbläsare. Öppna utvecklarverktygen i webbläsaren, gå till Application/Lagring → Cookies för minfotboll.svenskfotboll.se och kopiera värdet för JWT_token. Direkt inloggning med telefonnummer och SMS kommer i en senare version.",
+        "description": "Testversionen använder JWT_token från en redan inloggad Min Fotboll-webbläsare. Öppna utvecklarverktygen i webbläsaren, gå till Application/Lagring → Cookies för minfotboll.svenskfotboll.se och kopiera värdet för JWT_token.",
         "data": {
           "token_json": "JWT_token (JSON)"
         },
         "data_description": {
           "token_json": "Hela JSON-värdet med AccessToken, RefreshToken, Expires och ServerTime."
+        }
+      },
+      "teams": {
+        "title": "Välj lag",
+        "description": "Välj vilka av dina aktuella lag som ska skapa sensorer i Home Assistant.",
+        "data": {
+          "selected_teams": "Lag"
         }
       }
     },
@@ -19,7 +26,21 @@
       "unknown": "Ett oväntat fel inträffade."
     },
     "abort": {
-      "already_configured": "Det här Min Fotboll-kontot är redan konfigurerat."
+      "already_configured": "Det här Min Fotboll-kontot är redan konfigurerat.",
+      "no_teams": "Inga aktuella lag hittades för kontot.",
+      "cannot_connect": "Kunde inte ansluta till Min Fotboll.",
+      "invalid_auth": "Autentiseringen behöver förnyas."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Välj lag",
+        "description": "Markera vilka lag som ska ha sensorer i Home Assistant. Ändringen laddar om integrationen automatiskt.",
+        "data": {
+          "selected_teams": "Lag"
+        }
+      }
     }
   }
 }
