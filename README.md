@@ -2,20 +2,21 @@
 
 Experimental Home Assistant custom integration for the Swedish **Min Fotboll** service.
 
-> **Status: v0.1.0 developer preview**
+> **Status: v0.1.1 developer preview**
 >
 > The API used by Min Fotboll is undocumented and may change. This integration is not affiliated with Svenska Fotbollförbundet, Min Fotboll or Sportswik.
 
-## What v0.1.0 does
+## What v0.1.1 does
 
 - Reads the teams followed by the signed-in Min Fotboll account.
 - Creates one Home Assistant match sensor per followed team.
-- Uses the Min Fotboll team and live-timeline endpoints.
+- Uses the verified `initmain` payload plus the live-timeline endpoint.
 - Updates every **90 seconds**.
 - Shows the current/live score when a game is live.
-- Otherwise shows the most recent finished game's score.
+- Otherwise shows the most recent finished game's score when available.
 - Exposes match status and the latest timeline event as entity attributes.
 - Automatically refreshes the Min Fotboll JWT pair when the access token expires.
+- Avoids the unverified `teamapi/getlivegames` call that caused HTTP 400 in v0.1.0.
 
 Example attributes:
 
@@ -45,9 +46,9 @@ minute: "75'"
 
 Copy `custom_components/min_fotboll` to your Home Assistant `config/custom_components/` directory and restart Home Assistant.
 
-## Authentication in v0.1.0
+## Authentication in v0.1.1
 
-The Min Fotboll web login requests an SMS code through a Google reCAPTCHA-protected web form. A Home Assistant server cannot complete that browser reCAPTCHA flow directly, so the first developer preview imports the JWT pair from an existing browser login.
+The Min Fotboll web login requests an SMS code through a Google reCAPTCHA-protected web form. A Home Assistant server cannot complete that browser reCAPTCHA flow directly, so the developer preview imports the JWT pair from an existing browser login.
 
 1. Sign in at `minfotboll.svenskfotboll.se` normally with phone number and SMS code.
 2. Open your browser developer tools.
@@ -76,8 +77,8 @@ The sensor state is the score (for example `1-3`). Attributes include:
 ## Known limitations
 
 - Min Fotboll has no documented public API for this use case.
-- v0.1.0 requires importing `JWT_token` from a browser login.
-- The exact response shape for team history can vary; this version contains defensive parsing but still needs real-world testing across more accounts and competitions.
+- v0.1.1 requires importing `JWT_token` from a browser login.
+- The exact response shape can vary; this version still needs real-world testing across more accounts and competitions.
 - New followed teams are discovered by the coordinator, but Home Assistant currently creates team entities when the integration is loaded. Restart/reload the integration after following a new team in Min Fotboll. Dynamic entity discovery is planned.
 
 ## Privacy
@@ -91,7 +92,5 @@ Repository: `stabro/home-assistant-minfotboll`
 Initial reverse engineering was based on requests made by the official Min Fotboll web client, including:
 
 - `/api/mainviewapi/initmain?IsFromWeb=true`
-- `/api/teamapi/getlivegames`
-- `/api/teamapi/getpreviousteamgames`
 - `/api/followgameapi/initlivetimelineblurbs`
 - `/api/jwtapi/refreshtoken`
