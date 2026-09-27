@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any
 
@@ -270,6 +270,17 @@ def _build_match(
     latest_text_raw = latest.get("Text") if latest else None
     latest_short_raw = latest.get("ShortText") if latest else None
     latest_details_raw = latest.get("DetailsText") if latest else None
+    finished_at = _finished_at(timeline)
+    result_display_until = (
+        finished_at + timedelta(hours=1) if finished_at is not None else None
+    )
+    recently_finished = bool(
+        status == STATUS_FINISHED
+        and result_display_until is not None
+        and datetime.now(timezone.utc) <= result_display_until
+    )
+    show_result = status == STATUS_LIVE or recently_finished
+
     home_score = game.get("HomeTeamScore")
     away_score = game.get("AwayTeamScore")
     score = None
@@ -291,6 +302,12 @@ def _build_match(
         "home_score": home_score,
         "away_score": away_score,
         "status": status,
+        "show_result": show_result,
+        "recently_finished": recently_finished,
+        "finished_at": finished_at.isoformat() if finished_at else None,
+        "result_display_until": (
+            result_display_until.isoformat() if result_display_until else None
+        ),
         "latest_event": _translate_event_text(latest_text_raw),
         "latest_event_raw": latest_text_raw,
         "minute": latest.get("GameMinute") if latest else None,
@@ -356,6 +373,34 @@ def _build_next_match(
         "is_today": days_until == 0,
         "relative": relative,
     }
+
+
+def _finished_at(timeline: dict[str, Any]) -> datetime | None:
+    """Return the final-whistle timestamp from the live timeline."""
+    if not isinstance(timeline, dict):
+        return None
+
+    for item in timeline.get("TimelineBlurbs", []):
+        if not isinstance(item, dict) or item.get("Deleted") or item.get("IsAd"):
+            continue
+        event = item.get("EREventInfo")
+        if not isinstance(event, dict) or not event.get("IsGameEnd"):
+            continue
+
+        value = event.get("InsertTime")
+        if not isinstance(value, str):
+            continue
+
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    return None
 
 
 def _latest_event(timeline: dict[str, Any]) -> dict[str, Any] | None:
