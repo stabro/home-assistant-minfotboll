@@ -281,6 +281,8 @@ def _build_match(
         "game_id": game.get("GameID"),
         "home_team": game.get("HomeTeamDisplayName"),
         "away_team": game.get("AwayTeamDisplayName"),
+        "home_team_short": _short_team_name(game.get("HomeTeamDisplayName")),
+        "away_team_short": _short_team_name(game.get("AwayTeamDisplayName")),
         "home_team_id": game.get("HomeTeamID"),
         "away_team_id": game.get("AwayTeamID"),
         "game_time": game.get("GameTime"),
@@ -341,9 +343,12 @@ def _build_next_match(
         "game_time": game.get("GameTime"),
         "home_team": game.get("HomeTeamDisplayName"),
         "away_team": game.get("AwayTeamDisplayName"),
+        "home_team_short": _short_team_name(game.get("HomeTeamDisplayName")),
+        "away_team_short": _short_team_name(game.get("AwayTeamDisplayName")),
         "home_team_id": home_team_id,
         "away_team_id": away_team_id,
         "opponent": opponent,
+        "opponent_short": _short_team_name(opponent),
         "home_away": "hemma" if is_home else "borta",
         "arena": game.get("ArenaName"),
         "status": STATUS_LIVE if _is_live(game) else STATUS_UPCOMING,
@@ -404,3 +409,42 @@ def _translate_event_text(value: Any) -> Any:
     for english, swedish in _EVENT_TRANSLATIONS.items():
         translated = translated.replace(english, swedish)
     return translated
+
+
+def _short_team_name(value: Any) -> Any:
+    """Return a compact display name without a duplicated club prefix.
+
+    Example:
+    "Sjuntorps IF Sjuntorp/Upphärad" -> "Sjuntorp/Upphärad"
+
+    Names such as "Wargöns IK P2012" are kept unchanged because the
+    team part does not repeat the club name.
+    """
+    if not isinstance(value, str):
+        return value
+
+    name = " ".join(value.split())
+    parts = name.split()
+    if len(parts) < 3:
+        return name
+
+    club_suffixes = {"IF", "IK", "FK", "BK", "SK", "FF"}
+    suffix_index = next(
+        (index for index, part in enumerate(parts[1:], start=1)
+         if part.upper() in club_suffixes),
+        None,
+    )
+    if suffix_index is None or suffix_index + 1 >= len(parts):
+        return name
+
+    club_word = parts[suffix_index - 1].casefold().rstrip("s")
+    team_word = parts[suffix_index + 1].split("/", 1)[0].casefold().rstrip("s")
+
+    if club_word and team_word and (
+        club_word == team_word
+        or club_word.startswith(team_word)
+        or team_word.startswith(club_word)
+    ):
+        return " ".join(parts[suffix_index + 1:])
+
+    return name
