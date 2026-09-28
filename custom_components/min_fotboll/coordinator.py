@@ -51,6 +51,7 @@ class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
         # endpoint may return only a recent window while a match is live,
         # so merging across polls gives Home Assistant the full match log.
         self._timeline_event_cache: dict[int, dict[int, dict[str, Any]]] = {}
+        self._timeline_history_loaded: set[int] = set()
 
     async def _async_update_data(self) -> dict[int, dict[str, Any]]:
         try:
@@ -79,9 +80,12 @@ class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
                 timeline: dict[str, Any] = {}
                 if current_game and current_game.get("GameID") and _should_load_timeline(current_game):
                     try:
-                        timeline = await self.api.async_get_timeline(
-                            int(current_game["GameID"])
-                        )
+                        game_id = int(current_game["GameID"])
+                        if game_id in self._timeline_history_loaded:
+                            timeline = await self.api.async_get_timeline(game_id)
+                        else:
+                            timeline = await self.api.async_get_full_timeline(game_id)
+                            self._timeline_history_loaded.add(game_id)
                     except MinFotbollConnectionError as err:
                         _LOGGER.debug(
                             "Timeline unavailable for game %s: %s",
@@ -326,6 +330,8 @@ def _build_match(
         "latest_event_details": _translate_event_text(latest_details_raw),
         "latest_event_details_raw": latest_details_raw,
         "events": _timeline_events(timeline),
+        "event_count": len(_timeline_events(timeline)),
+        "timeline_complete": bool(timeline),
     }
 
 
