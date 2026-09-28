@@ -315,6 +315,7 @@ def _build_match(
         "latest_event_short_raw": latest_short_raw,
         "latest_event_details": _translate_event_text(latest_details_raw),
         "latest_event_details_raw": latest_details_raw,
+        "events": _timeline_events(timeline),
     }
 
 
@@ -373,6 +374,63 @@ def _build_next_match(
         "is_today": days_until == 0,
         "relative": relative,
     }
+
+
+def _timeline_events(timeline: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return normalized match events from the Min Fotboll timeline."""
+    if not isinstance(timeline, dict):
+        return []
+
+    events: list[dict[str, Any]] = []
+
+    for item in timeline.get("TimelineBlurbs", []):
+        if not isinstance(item, dict) or item.get("Deleted") or item.get("IsAd"):
+            continue
+
+        event = item.get("EREventInfo")
+        if not isinstance(event, dict):
+            continue
+
+        event_type = _translate_event_text(event.get("ShortText"))
+        text = _translate_event_text(event.get("Text"))
+        details = event.get("DetailsText")
+
+        player = None
+        shirt_number = None
+        if isinstance(details, str):
+            details = details.strip()
+            if details:
+                parts = details.split(maxsplit=1)
+                if parts and parts[0].isdigit():
+                    shirt_number = int(parts[0])
+                    player = parts[1].strip() if len(parts) > 1 else None
+                else:
+                    player = details
+
+        events.append(
+            {
+                "event_id": event.get("EREventID"),
+                "type_id": event.get("TypeID"),
+                "subtype_id": event.get("SubTypeID"),
+                "minute": event.get("GameMinute"),
+                "type": event_type,
+                "text": text,
+                "score": event.get("Score"),
+                "team": event.get("ClubDisplayName"),
+                "is_away_team_action": event.get("IsAwayTeamAction"),
+                "is_goal": bool(event.get("IsGoal")),
+                "is_period_start": bool(event.get("IsPeriodStart")),
+                "is_period_end": bool(event.get("IsPeriodEnd")),
+                "is_game_end": bool(event.get("IsGameEnd")),
+                "player": player,
+                "shirt_number": shirt_number,
+                "details": details or None,
+                "comment": event.get("CommentText") or None,
+                "insert_time": event.get("InsertTime"),
+            }
+        )
+
+    return events
 
 
 def _finished_at(timeline: dict[str, Any]) -> datetime | None:
