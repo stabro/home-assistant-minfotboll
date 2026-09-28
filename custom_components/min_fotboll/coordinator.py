@@ -47,6 +47,10 @@ class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
             if selected_team_ids is not None
             else None
         )
+        # Keep every timeline event seen for each game. The Min Fotboll
+        # endpoint may return only a recent window while a match is live,
+        # so merging across polls gives Home Assistant the full match log.
+        self._timeline_event_cache: dict[int, dict[int, dict[str, Any]]] = {}
 
     async def _async_update_data(self) -> dict[int, dict[str, Any]]:
         try:
@@ -85,6 +89,12 @@ class MinFotbollCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]):
                             err,
                         )
                     else:
+                        timeline = _merge_timeline_events(
+                            timeline,
+                            self._timeline_event_cache.setdefault(
+                                int(current_game["GameID"]), {}
+                            ),
+                        )
                         header = timeline.get("GameHeaderInfo")
                         if isinstance(header, dict):
                             current_game = header
@@ -374,6 +384,52 @@ def _build_next_match(
         "is_today": days_until == 0,
         "relative": relative,
     }
+
+
+def _merge_timeline_events(
+    timeline: dict[str, Any],
+    cache: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    """Merge the latest API timeline window into a per-game event cache."""
+    if not isinstance(timeline, dict):
+        return {}
+
+    for item in timeline.get("TimelineBlurbs", []):
+        if not isinstance(item, dict) or item.get("IsAd"):
+            continue
+
+        event = item.get("EREventInfo")
+        if not isinstance(event, dict):
+            continue
+
+        event_id = event.get("EREventID") or item.get("LiveTimeItemID")
+        if not event_id:
+            continue
+
+        try:
+            key = int(event_id)
+        except (TypeError, ValueError):
+            continue
+
+        if item.get("Deleted"):
+            cache.pop(key, None)
+            continue
+
+        cache[key] = item
+
+    merged = list(cache.values())
+    merged.sort(
+        key=lambda item: (
+            (item.get("EREventInfo") or {}).get("InsertTime")
+            or item.get("InsertTime")
+            or ""
+        ),
+        reverse=True,
+    )
+
+    result = dict(timeline)
+    result["TimelineBlurbs"] = merged
+    return result
 
 
 def _timeline_events(timeline: dict[str, Any]) -> list[dict[str, Any]]:
