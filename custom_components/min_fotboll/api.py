@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import base64
+from datetime import datetime, timezone
 import json
 from typing import Any
 
@@ -79,6 +80,139 @@ class MinFotbollApi:
             "/api/followgameapi/initlivetimelineblurbs",
             params={"GameID": game_id},
         )
+
+    async def async_get_more_timeline_blurbs(
+        self,
+        game_id: int,
+        last_timeline_item: str,
+        last_item_id: int,
+    ) -> Any:
+        """Return the next older timeline page used by the web client."""
+        return await self._request(
+            "GET",
+            "/api/followgameapi/getmoretimelineblurbs",
+            params={
+                "GameID": game_id,
+                "LastTimelineItem": last_timeline_item,
+                "LastItemID": last_item_id,
+            },
+        )
+
+    async def async_get_full_timeline(self, game_id: int) -> dict[str, Any]:
+        """Return the initial timeline plus all older timeline pages."""
+        initial = await self.async_get_timeline(game_id)
+        if not isinstance(initial, dict):
+            return {}
+
+        combined = list(initial.get("TimelineBlurbs", []))
+        page = list(combined)
+        seen: set[tuple[str, int | str]] = set()
+
+        for item in combined:
+            key = self._timeline_item_key(item)
+            if key is not None:
+                seen.add(key)
+
+        # The Min Fotboll web client normally receives 10 rows per page and
+        # treats fewer than 8 as the end of the feed. Keep the same rule.
+        for _ in range(100):
+            if not page:
+                break
+
+            last_item = page[-1]
+            if not isinstance(last_item, dict):
+                break
+
+            insert_time = self._timeline_cursor_time(last_item.get("InsertTime"))
+            if not insert_time:
+                break
+
+            last_item_id = 0
+            for item in reversed(page):
+                if not isinstance(item, dict):
+                    continue
+                value = item.get("LiveTimeItemID")
+                try:
+                    parsed = int(value or 0)
+                except (TypeError, ValueError):
+                    parsed = 0
+                if parsed > 0:
+                    last_item_id = parsed
+                    break
+
+            older = await self.async_get_more_timeline_blurbs(
+                game_id,
+                insert_time,
+                last_item_id,
+            )
+
+            if isinstance(older, dict):
+                older_page = older.get("TimelineBlurbs", [])
+            else:
+                older_page = older
+
+            if not isinstance(older_page, list) or not older_page:
+                break
+
+            added = 0
+            for item in older_page:
+                if not isinstance(item, dict):
+                    continue
+                key = self._timeline_item_key(item)
+                if key is not None and key in seen:
+                    continue
+                if key is not None:
+                    seen.add(key)
+                combined.append(item)
+                added += 1
+
+            if added == 0:
+                break
+
+            page = older_page
+
+            if len(older_page) < 8:
+                break
+
+        result = dict(initial)
+        result["TimelineBlurbs"] = combined
+        return result
+
+    @staticmethod
+    def _timeline_item_key(item: Any) -> tuple[str, int | str] | None:
+        if not isinstance(item, dict):
+            return None
+
+        event = item.get("EREventInfo")
+        if isinstance(event, dict) and event.get("EREventID") is not None:
+            return ("event", event["EREventID"])
+
+        live_id = item.get("LiveTimeItemID")
+        if live_id:
+            return ("live", live_id)
+
+        insert_time = item.get("InsertTime")
+        if insert_time:
+            return ("time", str(insert_time))
+
+        return None
+
+    @staticmethod
+    def _timeline_cursor_time(value: Any) -> str | None:
+        """Format a timeline timestamp like the Min Fotboll web client."""
+        if not isinstance(value, str) or not value:
+            return None
+
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            # If the API ever already sends the cursor format, pass it through.
+            return value
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+
+        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     async def async_refresh_token(self) -> dict[str, Any]:
         access_token = self._clean_access_token(self._token.get("AccessToken"))
